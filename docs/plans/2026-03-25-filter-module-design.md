@@ -1,4 +1,7 @@
-# 滤波模块设计方案（V1）
+# 滤波模块设计方案（V1，非需求主文档）
+
+> 说明：本文件是历史设计方案（implementation/design note），**不是需求主文档**。  
+> 需求唯一入口：`D:\GitHub_Repository\easyCCD\需求文档.md`。
 
 ## 1. 目标与边界
 
