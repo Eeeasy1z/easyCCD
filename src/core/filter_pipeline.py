@@ -69,3 +69,18 @@ class FilterPipeline:
         if len(output) < len(data):
             output.extend([0] * (len(data) - len(output)))
         return output[: len(data)]
+
+    def apply_with_stages(self, data: list[int]) -> list[tuple[str, list[int]]]:
+        stages: list[tuple[str, list[int]]] = []
+        output = list(data)
+        for step in self._steps:
+            flt = self._registry.get(step.filter_name)
+            if flt is None:
+                continue
+            output = flt.apply(output, step.params)
+            if len(output) < len(data):
+                output = output + ([0] * (len(data) - len(output)))
+            normalized = output[: len(data)]
+            stages.append((step.filter_name, normalized))
+            output = normalized
+        return stages

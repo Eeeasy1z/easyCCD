@@ -39,6 +39,8 @@ class DataTableWidget(QWidget):
             value_item = QTableWidgetItem("0")
             index_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
             value_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+            index_item.setForeground(QColor("#EAEAEA"))
+            value_item.setForeground(QColor("#EAEAEA"))
             self._table.setItem(index, 0, index_item)
             self._table.setItem(index, 1, value_item)
             self._value_items.append(value_item)

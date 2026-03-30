@@ -10,7 +10,30 @@ class PlaybackController:
     def __init__(self, window) -> None:
         self._window = window
 
+    def _ensure_playback_without_serial_conflict(self) -> None:
+        if self._window._connected:
+            self._window._serial_controller.disconnect_serial(async_mode=False)
+            self._window.set_status_text("状态: 已断开串口，开始回放")
+
+    def _stop_playback_ui(self) -> None:
+        self._window._playback_playing = False
+        self._window._playback_timer.stop()
+        self._window._play_pause_button.setText("▶")
+
+    def _enable_loaded_playback_controls(self, frame_count: int) -> None:
+        self._window._prev_frame_button.setEnabled(True)
+        self._window._next_frame_button.setEnabled(True)
+        self._window._play_pause_button.setEnabled(True)
+        self._window._play_pause_button.setText("▶")
+        self._stop_playback_ui()
+        self._window._playback_slider.setEnabled(True)
+        self._window._playback_slider.blockSignals(True)
+        self._window._playback_slider.setMaximum(frame_count - 1)
+        self._window._playback_slider.setValue(0)
+        self._window._playback_slider.blockSignals(False)
+
     def load_playback_csv(self) -> None:
+        self._ensure_playback_without_serial_conflict()
         selected_path, _ = QFileDialog.getOpenFileName(
             self._window,
             "加载回放CSV",
@@ -38,16 +61,18 @@ class PlaybackController:
         has_schema = len(header) >= 3 and header[0] == "schema_version"
         required_pixel_cols = 128
 
-        parsed_frames: list[tuple[int, float, list[int]]] = []
+        parsed_entries: list[tuple[float, int, int, tuple[int, float, list[int]]]] = []
         for raw in rows[1:]:
             if not raw:
                 continue
             try:
+                batch_no = 0
                 if has_schema:
                     schema_version = raw[0].strip() if len(raw) > 0 else ""
                     if schema_version == "v2":
                         if len(raw) < 132:
                             continue
+                        batch_no = int(raw[1])
                         frame_no = int(raw[2])
                         timestamp = float(raw[3])
                         pixel_start = 4
@@ -67,46 +92,46 @@ class PlaybackController:
 
             if len(payload) < required_pixel_cols:
                 payload.extend([0] * (required_pixel_cols - len(payload)))
-            parsed_frames.append((frame_no, timestamp, payload[:required_pixel_cols]))
+            frame_data = (frame_no, timestamp, payload[:required_pixel_cols])
+            parsed_entries.append((timestamp, batch_no, frame_no, frame_data))
+
+        parsed_entries.sort(key=lambda item: (item[0], item[1], item[2]))
+        parsed_frames = [entry[3] for entry in parsed_entries]
+        parsed_batch_ids = [entry[1] for entry in parsed_entries]
 
         if not parsed_frames:
             QMessageBox.warning(self._window, "提示", "未解析到可回放的数据帧。")
             return
 
         self._window._playback_frames = parsed_frames
+        self._window._playback_batch_ids = parsed_batch_ids
         self._window._playback_index = 0
-        self._window._prev_frame_button.setEnabled(True)
-        self._window._next_frame_button.setEnabled(True)
-        self._window._play_pause_button.setEnabled(True)
-        self._window._play_pause_button.setText("▶")
-        self._window._playback_playing = False
-        self._window._playback_timer.stop()
-        self._window._playback_slider.setEnabled(True)
-        self._window._playback_slider.blockSignals(True)
-        self._window._playback_slider.setMaximum(len(parsed_frames) - 1)
-        self._window._playback_slider.setValue(0)
-        self._window._playback_slider.blockSignals(False)
+        self._enable_loaded_playback_controls(len(parsed_frames))
         self.apply_playback_speed()
         self.show_playback_frame(self._window._playback_index)
         self._window._status_label.setText(f"状态: 已加载回放数据 {len(parsed_frames)} 帧")
 
     def show_playback_frame(self, index: int) -> None:
+        self._ensure_playback_without_serial_conflict()
         if not self._window._playback_frames:
             return
         if index < 0 or index >= len(self._window._playback_frames):
             return
 
         frame_no, _timestamp, payload = self._window._playback_frames[index]
+        batch_id = 0
+        if 0 <= index < len(self._window._playback_batch_ids):
+            batch_id = self._window._playback_batch_ids[index]
+        batch_suffix = f" 批次{batch_id}" if batch_id > 0 else ""
         filtered_payload = self._window._apply_pipeline_safe(payload)
         self._window._playback_index = index
-        self._window._last_raw_payload = list(payload)
-        self._window._latest_payload = list(filtered_payload)
-        self._window._latest_frame_no = frame_no
-        self._window._waveform_widget.update_curves(payload, filtered_payload)
-        self._window._binary_preview_widget.update_from_payload(filtered_payload)
-        self._window._table_widget.update_data(filtered_payload)
+        self._window.render_frame_views(
+            payload,
+            filtered_payload,
+            frame_no,
+            frame_label=f"帧号: {frame_no}{batch_suffix} (回放 {index + 1}/{len(self._window._playback_frames)})",
+        )
         self._window._raw_stream_widget.append_frame(frame_no, payload, source="回放")
-        self._window._frame_label.setText(f"帧号: {frame_no} (回放 {index + 1}/{len(self._window._playback_frames)})")
         self._window._playback_slider.blockSignals(True)
         self._window._playback_slider.setValue(index)
         self._window._playback_slider.blockSignals(False)
@@ -141,10 +166,9 @@ class PlaybackController:
         if not self._window._playback_frames:
             return
         if self._window._playback_playing:
-            self._window._playback_playing = False
-            self._window._playback_timer.stop()
-            self._window._play_pause_button.setText("▶")
+            self._stop_playback_ui()
             return
+        self._ensure_playback_without_serial_conflict()
         self._window._playback_playing = True
         self.apply_playback_speed()
         self._window._playback_timer.start()
@@ -152,15 +176,11 @@ class PlaybackController:
 
     def playback_tick(self) -> None:
         if not self._window._playback_frames:
-            self._window._playback_timer.stop()
-            self._window._playback_playing = False
-            self._window._play_pause_button.setText("▶")
+            self._stop_playback_ui()
             return
         next_index = self._window._playback_index + 1
         if next_index >= len(self._window._playback_frames):
-            self._window._playback_timer.stop()
-            self._window._playback_playing = False
-            self._window._play_pause_button.setText("▶")
+            self._stop_playback_ui()
             return
         self.show_playback_frame(next_index)
 
