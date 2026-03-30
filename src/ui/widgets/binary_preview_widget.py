@@ -18,16 +18,20 @@ class BinaryPreviewWidget(QWidget):
         self._strip = QLabel("尚未启用二值化渲染", self)
         self._strip.setMinimumHeight(42)
         self._strip.setStyleSheet(
-            "QLabel { background-color: #111111; color: #9E9E9E; border: 1px solid #2A2A2A; padding: 8px; }"
+            "QLabel { background-color: #111111; color: #EAEAEA; border: 1px solid #2A2A2A; padding: 8px; }"
         )
 
         layout.addWidget(self._title)
         layout.addWidget(self._strip)
 
-    def update_from_payload(self, payload: list[int], threshold: int = 128) -> None:
+    def update_from_payload(self, payload: list[int], threshold: int = 128, invert: bool = False) -> None:
         normalized = [max(0, min(255, int(value))) for value in payload[: self.POINT_COUNT]]
         if len(normalized) < self.POINT_COUNT:
             normalized.extend([0] * (self.POINT_COUNT - len(normalized)))
-        bits = ["█" if value >= threshold else "·" for value in normalized]
-        chunks = ["".join(bits[i : i + 32]) for i in range(0, 128, 32)]
-        self._strip.setText("\n".join(chunks))
+        bits: list[str] = []
+        for value in normalized:
+            bit_is_one = value >= threshold
+            if invert:
+                bit_is_one = not bit_is_one
+            bits.append(" " if bit_is_one else "█")
+        self._strip.setText("".join(bits))
