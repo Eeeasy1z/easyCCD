@@ -1,0 +1,34 @@
+[project]
+name = "easyccd"
+version = "0.1.0"
+description = "Desktop GUI application for CCD sensor data acquisition with serial communication"
+requires-python = ">=3.8"
+dependencies = [
+    "PySide6>=6.6.0",
+    "pyserial>=3.5",
+    "pyqtgraph>=0.13.0",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.uv]
+workspace = { members = [] }
